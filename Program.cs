@@ -2,7 +2,8 @@
 using System.Linq;
 using System.Collections.Generic;
 using Microsoft.ML;
-using Microsoft.ML.Data;
+using Microsoft.ML.Transforms;
+using Microsoft.ML.Trainers;
 using Common;
 
 namespace edaAttrition
@@ -50,13 +51,17 @@ namespace edaAttrition
 
             string[] numericFields = numFieldNames.ToArray();
 
-            var dataPipeline = mlContext.Transforms.Categorical.OneHotHashEncoding(outputColumnName:nameof(Employee.BusinessTravel)+"-OHE", inputColumnName:nameof(Employee.BusinessTravel))
-                .Append(mlContext.Transforms.Categorical.OneHotHashEncoding(outputColumnName:nameof(Employee.Department)+"-OHE", inputColumnName:nameof(Employee.Department)))
-                .Append(mlContext.Transforms.Categorical.OneHotHashEncoding(outputColumnName:nameof(Employee.EducationField)+"-OHE", inputColumnName:nameof(Employee.EducationField)))
-                .Append(mlContext.Transforms.Categorical.OneHotHashEncoding(outputColumnName:nameof(Employee.MaritalStatus)+"-OHE", inputColumnName:nameof(Employee.MaritalStatus)))
-                .Append(mlContext.Transforms.Categorical.OneHotHashEncoding(outputColumnName:nameof(Employee.JobLevel)+"-OHE", inputColumnName:nameof(Employee.JobLevel)))
-                .Append(mlContext.Transforms.Categorical.OneHotHashEncoding(outputColumnName:nameof(Employee.JobRole)+"-OHE", inputColumnName:nameof(Employee.JobRole)))
-                .Append(mlContext.Transforms.Categorical.OneHotHashEncoding(outputColumnName:nameof(Employee.OverTime)+"-OHE", inputColumnName:nameof(Employee.OverTime)))
+            var dataPipeline = mlContext.Transforms.Categorical.OneHotEncoding(
+                new[]
+                {
+                    new InputOutputColumnPair(nameof(Employee.BusinessTravel)+"-OHE", nameof(Employee.BusinessTravel)),
+                    new InputOutputColumnPair(nameof(Employee.Department)+"-OHE", nameof(Employee.Department)),
+                    new InputOutputColumnPair(nameof(Employee.EducationField)+"-OHE", nameof(Employee.EducationField)),
+                    new InputOutputColumnPair(nameof(Employee.MaritalStatus)+"-OHE", nameof(Employee.MaritalStatus)),
+                    new InputOutputColumnPair(nameof(Employee.JobLevel)+"-OHE", nameof(Employee.JobLevel)),
+                    new InputOutputColumnPair(nameof(Employee.JobRole)+"-OHE", nameof(Employee.JobRole)),
+                    new InputOutputColumnPair(nameof(Employee.OverTime)+"-OHE", nameof(Employee.OverTime))
+                }, OneHotEncodingEstimator.OutputKind.Indicator)
                 .Append(mlContext.Transforms.Concatenate("Features", numericFields));
 
                 /*                    
@@ -69,9 +74,11 @@ namespace edaAttrition
             var prepTrainData = dataPipeline.Fit(trainData).Transform(trainData);
             ConsoleHelper.ConsoleWriteHeader("=============== Prepared Data ===============");
 
-            var trainer = mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
-                                labelColumnName:nameof(Employee.Attrition), 
-                                featureColumnName:"Features");
+            // var trainer = mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+            //                    labelColumnName:nameof(Employee.Attrition), 
+            //                    featureColumnName:"Features");
+
+            var trainer = mlContext.BinaryClassification.Trainers.LightGbm(labelColumnName:nameof(Employee.Attrition));
 
             var trainPipeline = dataPipeline.Append(trainer);
 
@@ -100,7 +107,7 @@ namespace edaAttrition
                     predictionTransformer:trainedModel.LastTransformer,  
                     data:prepTrainData, 
                     labelColumnName:nameof(Employee.Attrition), 
-                    permutationCount: 5);
+                    permutationCount: 50);
 
             // Now let's look at which features are most important to the model
             // overall. Get the feature indices sorted by their impact on AUC.
@@ -113,11 +120,11 @@ namespace edaAttrition
             Console.WriteLine("Feature\tModel Weight\tChange in AUC"
                 + "\t95% Confidence in the Mean Change in AUC");
             var auc = permutationMetrics.Select(x => x.AreaUnderRocCurve).ToArray();
-            foreach (int i in sortedIndices)
+
+            for(int i=0; i<10; i++)
             {
-                Console.WriteLine("{0}\t{1:0.00}\t{2:G4}\t{3:G4}",
-                    numericFields[i],
-                    trainedModel.LastTransformer.Model.SubModel.Weights[i],
+                Console.WriteLine("{0}\t{1:G4}\t{2:G4}",
+                    numericFields[i],                    
                     auc[i].Mean,
                     1.96 * auc[i].StandardError);
             }
