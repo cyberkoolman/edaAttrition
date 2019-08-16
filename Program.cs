@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Collections.Generic;
 using Microsoft.ML;
+using Microsoft.ML.Data;
 using Microsoft.ML.Transforms;
 using Microsoft.ML.Trainers;
 using Common;
@@ -21,16 +22,6 @@ namespace edaAttrition
             var trainData = split.TrainSet;
             var testData = split.TestSet;
 
-            var modelPathName = "./model/attritionModel.zip";
-            /*
-            DataViewSchema modelSchema;
-            ITransformer trainedModel;
-            if (System.IO.File.Exists(modelPathName))
-            {                
-                trainedModel = mlContext.Model.Load(modelPathName, out modelSchema);
-            }
-            */
-
             var numFields = attritionData.Schema.AsEnumerable()
                 .Select(column => new { column.Name, column.Type })
                 .Where(column => (column.Name != nameof(Employee.Attrition)) && (column.Type.ToString() == "Single"))
@@ -39,54 +30,54 @@ namespace edaAttrition
             var numFieldNames = numFields.AsEnumerable()
                 .Select(column => column.Name)
                 .ToList();
-            
-            // var numFieldNames = new List<string>();
-            numFieldNames.Add(nameof(Employee.BusinessTravel)+"-OHE");
-            numFieldNames.Add(nameof(Employee.Department)+"-OHE");
-            numFieldNames.Add(nameof(Employee.EducationField)+"-OHE");
-            numFieldNames.Add(nameof(Employee.MaritalStatus)+"-OHE");
-            numFieldNames.Add(nameof(Employee.JobLevel)+"-OHE");
-            numFieldNames.Add(nameof(Employee.JobRole)+"-OHE");
-            numFieldNames.Add(nameof(Employee.OverTime)+"-OHE");
 
-            string[] numericFields = numFieldNames.ToArray();
+            var oheFieldNames = new List<string>();
+            oheFieldNames.Add("OHE-" + nameof(Employee.BusinessTravel));
+            oheFieldNames.Add("OHE-" + nameof(Employee.Department));
+            oheFieldNames.Add("OHE-" + nameof(Employee.EducationField));
+            oheFieldNames.Add("OHE-" + nameof(Employee.MaritalStatus));
+            oheFieldNames.Add("OHE-" + nameof(Employee.JobLevel));
+            oheFieldNames.Add("OHE-" + nameof(Employee.JobRole));
+            oheFieldNames.Add("OHE-" + nameof(Employee.OverTime));
 
-            var dataPipeline = mlContext.Transforms.Categorical.OneHotEncoding(
+            var allFeatureFields = new List<string>();
+            allFeatureFields.AddRange(oheFieldNames);
+            string[] numFeatures = numFieldNames.ToArray();
+            allFeatureFields.AddRange(numFeatures);
+            string[] allFeatureNames = allFeatureFields.ToArray();
+
+            IEstimator<ITransformer> featurizePipeline = mlContext.Transforms.Categorical.OneHotEncoding(
                 new[]
                 {
-                    new InputOutputColumnPair(nameof(Employee.BusinessTravel)+"-OHE", nameof(Employee.BusinessTravel)),
-                    new InputOutputColumnPair(nameof(Employee.Department)+"-OHE", nameof(Employee.Department)),
-                    new InputOutputColumnPair(nameof(Employee.EducationField)+"-OHE", nameof(Employee.EducationField)),
-                    new InputOutputColumnPair(nameof(Employee.MaritalStatus)+"-OHE", nameof(Employee.MaritalStatus)),
-                    new InputOutputColumnPair(nameof(Employee.JobLevel)+"-OHE", nameof(Employee.JobLevel)),
-                    new InputOutputColumnPair(nameof(Employee.JobRole)+"-OHE", nameof(Employee.JobRole)),
-                    new InputOutputColumnPair(nameof(Employee.OverTime)+"-OHE", nameof(Employee.OverTime))
-                }, OneHotEncodingEstimator.OutputKind.Indicator)
-                .Append(mlContext.Transforms.Concatenate("Features", numericFields));
+                    new InputOutputColumnPair("OHE-" + nameof(Employee.BusinessTravel), nameof(Employee.BusinessTravel)),
+                    new InputOutputColumnPair("OHE-" + nameof(Employee.Department), nameof(Employee.Department)),
+                    new InputOutputColumnPair("OHE-" + nameof(Employee.EducationField), nameof(Employee.EducationField)),
+                    new InputOutputColumnPair("OHE-" + nameof(Employee.MaritalStatus), nameof(Employee.MaritalStatus)),
+                    new InputOutputColumnPair("OHE-" + nameof(Employee.JobLevel), nameof(Employee.JobLevel)),
+                    new InputOutputColumnPair("OHE-" + nameof(Employee.JobRole), nameof(Employee.JobRole)),
+                    new InputOutputColumnPair("OHE-" + nameof(Employee.OverTime), nameof(Employee.OverTime))
+                }, OneHotEncodingEstimator.OutputKind.Indicator);
 
-                /*                    
-                .Append(mlContext.Transforms.DropColumns(nameof(Employee.BusinessTravel), nameof(Employee.Department),
-                                                        nameof(Employee.EducationField), nameof(Employee.MaritalStatus), 
-                                                        nameof(Employee.JobLevel), nameof(Employee.JobRole), nameof(Employee.OverTime)));
-                */
+            featurizePipeline = featurizePipeline.Append(mlContext.Transforms.Concatenate("Features", allFeatureNames))
+                                .Append(mlContext.Transforms.NormalizeMinMax("Features", "Features"));
 
-            ConsoleHelper.ConsoleWriteHeader("=============== Preparing Data ===============");
-            var prepTrainData = dataPipeline.Fit(trainData).Transform(trainData);
-            ConsoleHelper.ConsoleWriteHeader("=============== Prepared Data ===============");
+            ConsoleHelper.ConsoleWriteHeader("=============== Begin to train the model ===============");
 
-            // var trainer = mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
-            //                    labelColumnName:nameof(Employee.Attrition), 
-            //                    featureColumnName:"Features");
+            var trainer = mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(
+                            labelColumnName: nameof(Employee.Attrition),
+                            featureColumnName: "Features");
 
-            var trainer = mlContext.BinaryClassification.Trainers.LightGbm(labelColumnName:nameof(Employee.Attrition));
+            /* ----- Tried with other trainers below and compared the outcome ------ */
+            // var trainer = mlContext.BinaryClassification.Trainers.LightGbm(labelColumnName: nameof(Employee.Attrition), featureColumnName: "Features");
+            // var trainer = mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: nameof(Employee.Attrition), featureColumnName: "Features");
+            // var trainer = mlContext.BinaryClassification.Trainers.LbfgsLogisticRegression(labelColumnName: nameof(Employee.Attrition), featureColumnName: "Features");
+            // var trainer = mlContext.BinaryClassification.Trainers.SgdCalibrated(labelColumnName: nameof(Employee.Attrition), featureColumnName: "Features");
+            /* ------------------------------------------------------------------- */
 
-            var trainPipeline = dataPipeline.Append(trainer);
-
-            ConsoleHelper.ConsoleWriteHeader("=============== Training model ===============");
+            var trainPipeline = featurizePipeline.Append(trainer);
             var trainedModel = trainPipeline.Fit(trainData);
-            mlContext.Model.Save(trainedModel, attritionData.Schema, modelPathName);
 
-            ConsoleHelper.ConsoleWriteHeader("=============== Trained and Saved the model ===============");
+            ConsoleHelper.ConsoleWriteHeader("=============== Trained model successfully ===============");
 
             /*
             var viewTrainPipeline = mlContext.Transforms
@@ -95,38 +86,50 @@ namespace edaAttrition
             */
 
             Console.WriteLine("===== Evaluating Model's accuracy with Test data =====");
+
             var testDataPredictions = trainedModel.Transform(testData);
-
-            var evaluateMetrics = mlContext.BinaryClassification.Evaluate(data: testDataPredictions, 
-                                                                labelColumnName: nameof(Employee.Attrition), 
+            var evaluateMetrics = mlContext.BinaryClassification.Evaluate(data: testDataPredictions,
+                                                                labelColumnName: nameof(Employee.Attrition),
                                                                 scoreColumnName: "Score");
+            ConsoleHelper.PrintBinaryClassificationMetrics(trainedModel.ToString(), evaluateMetrics);
 
-            ConsoleHelper.PrintBinaryClassificationMetrics(trainedModel.ToString(), evaluateMetrics);            
+            Console.WriteLine("===== Permutation Test =====");
 
+            var permuteTestData = featurizePipeline.Fit(trainData).Transform(trainData);
             var permutationMetrics = mlContext.BinaryClassification.PermutationFeatureImportance(
-                    predictionTransformer:trainedModel.LastTransformer,  
-                    data:prepTrainData, 
-                    labelColumnName:nameof(Employee.Attrition), 
+                    predictionTransformer: trainedModel.LastTransformer,
+                    data: permuteTestData,
+                    labelColumnName: nameof(Employee.Attrition),
                     permutationCount: 50);
+
+            var mapFields = new List<string>();
+            for (int i = 0; i < allFeatureNames.Count(); i++)
+            {
+                var slotField = new VBuffer<ReadOnlyMemory<char>>();
+                if (permuteTestData.Schema[allFeatureNames[i]].HasSlotNames())
+                {
+                    permuteTestData.Schema[allFeatureNames[i]].GetSlotNames(ref slotField);
+                    for (int j = 0; j < slotField.Length; j++)
+                    {
+                        mapFields.Add(allFeatureNames[i]);
+                    }
+                }
+                else
+                {
+                    mapFields.Add(allFeatureNames[i]);
+                }
+            }
 
             // Now let's look at which features are most important to the model
             // overall. Get the feature indices sorted by their impact on AUC.
             var sortedIndices = permutationMetrics
-                .Select((metrics, index) => new { index, metrics.AreaUnderRocCurve})
+                .Select((metrics, index) => new { index, metrics.AreaUnderRocCurve })
                 .OrderByDescending(
-                feature => Math.Abs(feature.AreaUnderRocCurve.Mean))
-                .Select(feature => feature.index);
+                feature => Math.Abs(feature.AreaUnderRocCurve.Mean));
 
-            Console.WriteLine("Feature\tModel Weight\tChange in AUC"
-                + "\t95% Confidence in the Mean Change in AUC");
-            var auc = permutationMetrics.Select(x => x.AreaUnderRocCurve).ToArray();
-
-            for(int i=0; i<10; i++)
+            foreach (var feature in sortedIndices)
             {
-                Console.WriteLine("{0}\t{1:G4}\t{2:G4}",
-                    numericFields[i],                    
-                    auc[i].Mean,
-                    1.96 * auc[i].StandardError);
+                Console.WriteLine($"{mapFields[feature.index],-20}|\t{Math.Abs(feature.AreaUnderRocCurve.Mean):F6}");
             }
         }
     }

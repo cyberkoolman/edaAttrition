@@ -11,4 +11,10 @@
     <PackageReference Include="Microsoft.ML.LightGBM" Version="1.2.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="data\attrition.csv">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
